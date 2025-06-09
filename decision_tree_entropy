@@ -1,0 +1,109 @@
+import numpy as np
+
+
+class Node:
+    def __init__(self, feature=None, threshold=None, left=None, right=None, value=None):
+        self.feature = feature
+        self.threshold = threshold
+        self.left = left
+        self.right = right
+        self.value = value
+
+
+class DecisionTree:
+    def __init__(self, min_samples_split=2, max_depth=100, max_features=None):
+        self.min_samples_split = min_samples_split
+        self.max_depth = max_depth
+        self.max_features = max_features
+        self.root = None
+
+    def fit(self, X, y):
+        num_features = X.shape[1]
+        self.n_features = min(self.max_features, num_features) if self.max_features else num_features
+        self.root = self._grow_tree(X, y)
+
+    def predict(self, X):
+        pred = []
+        for x in X:
+            node = self.root
+            while node.value is None:
+                if x[node.feature] <= node.threshold:
+                    node = node.left
+                else:
+                    node = node.right
+            pred.append(node.value)
+        return np.array(pred)
+
+    def _grow_tree(self, X, y, depth=0):
+        num_samples, num_features = X.shape
+        num_classes = len(np.unique(y))
+
+        if depth >= self.max_depth or num_classes == 1 or num_samples < self.min_samples_split:
+            return Node(value=self._most_common_label(y))
+
+        feat_idxs = np.random.choice(num_features, self.n_features, replace=False)
+        best_feature, best_thr = self._best_split(X, y, feat_idxs)
+
+        if best_feature is None:
+            return Node(value=self._most_common_label(y))
+
+        left_idxs, right_idxs = self._split(X[:, best_feature], best_thr)
+        left_child = self._grow_tree(X[left_idxs], y[left_idxs], depth + 1)
+        right_child = self._grow_tree(X[right_idxs], y[right_idxs], depth + 1)
+
+        return Node(best_feature, best_thr, left_child, right_child)
+
+    def _best_split(self, X, y, feat_idxs):
+        best_gain = -1
+        best_feature, best_thr = None, None
+
+        for idx in feat_idxs:
+            values = np.unique(X[:, idx])
+            for threshold in values:
+                gain = self._info_gain(y, X[:, idx], threshold)
+                if gain > best_gain:
+                    best_gain = gain
+                    best_feature = idx
+                    best_thr = threshold
+
+        return best_feature, best_thr
+
+    def _info_gain(self, y, column, threshold):
+        parent_entropy = self._entropy(y)
+        left_idxs, right_idxs = self._split(column, threshold)
+
+        if len(left_idxs) == 0 or len(right_idxs) == 0:
+            return 0
+
+        n = len(y)
+        e_left = self._entropy(y[left_idxs])
+        e_right = self._entropy(y[right_idxs])
+        weighted_entropy = (len(left_idxs) / n) * e_left + (len(right_idxs) / n) * e_right
+
+        return parent_entropy - weighted_entropy
+
+    def _split(self, column, threshold):
+        left = [i for i, val in enumerate(column) if val <= threshold]
+        right = [i for i, val in enumerate(column) if val > threshold]
+        return left, right
+
+    def _entropy(self, y):
+        labels, counts = np.unique(y, return_counts=True)
+        prob = counts / counts.sum()
+        return -np.sum(prob * np.log(prob))
+
+    def _most_common_label(self, y):
+        labels, counts = np.unique(y, return_counts=True)
+        return labels[np.argmax(counts)]
+
+    def print_tree(self):
+        def _print(node, depth):
+            indent = "  " * depth
+            if node.value is not None:
+                print(f"{indent}leaf: {node.value}")
+            else:
+                print(f"{indent}feature {node.feature} <= {node.threshold}")
+                _print(node.left, depth + 1)
+                _print(node.right, depth + 1)
+
+        _print(self.root, 0)
